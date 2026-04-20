@@ -4,18 +4,12 @@ import { callClaude } from './claude.js';
 const STORAGE_KEY = 'aimidwife_v1';
 
 const EMPTY_STATE = () => ({
-  commitments: [],
-  prose: '',
-  history: [],
+  commitments: [], prose: '', history: [],
   gauges: { understanding: 0, endorsement: 0 },
-  artifact: null,
-  artifact_stale: false
+  artifact: null, artifact_stale: false
 });
 
-const COLD_START = {
-  stem: "What's this?",
-  options: ["Doing", "Figuring out", "Not sure"]
-};
+const COLD_START = { stem: "What's this?", options: ["Doing", "Figuring out", "Not sure"] };
 
 let state = EMPTY_STATE();
 let currentQuestion = { ...COLD_START };
@@ -23,20 +17,38 @@ let apiKey = localStorage.getItem('anthropic_key') || null;
 let isLoading = false;
 let turnCount = 0;
 
-// ── Persistence ────────────────────────────────────────────────────────────────
-function saveState() {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ state, currentQuestion, turnCount }));
-  } catch (_) {}
+// ── Option color palette (cycles across 4 neon accents) ───────────────────────
+const ACCENTS = [
+  { color: '#6366f1', glow: 'rgba(99,102,241,0.22)',  alpha: 'rgba(99,102,241,0.15)'  }, // indigo
+  { color: '#8b5cf6', glow: 'rgba(139,92,246,0.22)',  alpha: 'rgba(139,92,246,0.15)'  }, // violet
+  { color: '#06b6d4', glow: 'rgba(6,182,212,0.22)',   alpha: 'rgba(6,182,212,0.15)'   }, // cyan
+  { color: '#10b981', glow: 'rgba(16,185,129,0.22)',  alpha: 'rgba(16,185,129,0.15)'  }, // emerald
+];
+
+// ── Phase system ───────────────────────────────────────────────────────────────
+const PHASES = [
+  { min: 0,  label: 'Start',         color: '#4b5563' },
+  { min: 1,  label: 'Exploring',     color: '#6366f1' },
+  { min: 4,  label: 'Shaping',       color: '#8b5cf6' },
+  { min: 8,  label: 'Crystallizing', color: '#06b6d4' },
+  { min: 13, label: 'Finalizing',    color: '#10b981' },
+];
+function getPhase(n) {
+  return [...PHASES].reverse().find(p => n >= p.min) || PHASES[0];
 }
 
+// ── Persistence ────────────────────────────────────────────────────────────────
+function saveState() {
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify({ state, currentQuestion, turnCount })); }
+  catch (_) {}
+}
 function loadSaved() {
   try {
-    const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null');
-    if (saved?.state && saved?.currentQuestion) {
-      state = { ...EMPTY_STATE(), ...saved.state };
-      currentQuestion = saved.currentQuestion;
-      turnCount = saved.turnCount || state.history.length;
+    const s = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null');
+    if (s?.state && s?.currentQuestion) {
+      state = { ...EMPTY_STATE(), ...s.state };
+      currentQuestion = s.currentQuestion;
+      turnCount = s.turnCount || state.history.length;
       return true;
     }
   } catch (_) {}
@@ -45,93 +57,117 @@ function loadSaved() {
 
 // ── DOM refs ───────────────────────────────────────────────────────────────────
 const $ = id => document.getElementById(id);
-const questionStem      = $('question-stem');
-const optionsCont       = $('options-container');
-const loadingEl         = $('loading');
-const errorEl           = $('error-msg');
-const commitmentsList   = $('commitments-list');
-const commitmentsLabel  = $('commitments-label');
-const turnEl            = $('turn-counter');
-const uBar              = $('understanding-bar');
-const uPct              = $('understanding-pct');
-const eBar              = $('endorsement-bar');
-const ePct              = $('endorsement-pct');
-const showDraftBtn      = $('show-draft-btn');
-const draftDot          = $('draft-dot');
-const draftOverlay      = $('draft-overlay');
-const draftContent      = $('draft-content');
-const apiKeyModal       = $('api-key-modal');
-const freetextArea      = $('freetext-area');
-const freetextInput     = $('freetext-input');
-const commitmentsSheet  = $('commitments-sheet');
-const sheetScrim        = $('sheet-scrim');
+const questionStem     = $('question-stem');
+const optionsCont      = $('options-container');
+const loadingEl        = $('loading');
+const errorEl          = $('error-msg');
+const commitmentsList  = $('commitments-list');
+const commitmentsLabel = $('commitments-label');
+const turnBadge        = $('turn-badge');
+const phaseBadge       = $('phase-badge');
+const uBar             = $('understanding-bar');
+const uPct             = $('understanding-pct');
+const eBar             = $('endorsement-bar');
+const ePct             = $('endorsement-pct');
+const showDraftBtn     = $('show-draft-btn');
+const draftDot         = $('draft-dot');
+const draftOverlay     = $('draft-overlay');
+const draftContent     = $('draft-content');
+const apiKeyModal      = $('api-key-modal');
+const freetextArea     = $('freetext-area');
+const freetextInput    = $('freetext-input');
+const commitmentsSheet = $('commitments-sheet');
+const sheetScrim       = $('sheet-scrim');
 
-// ── Bootstrap ─────────────────────────────────────────────────────────────────
+// ── Bootstrap ──────────────────────────────────────────────────────────────────
 function init() {
   const restored = loadSaved();
   if (!apiKey) showApiKeyModal();
-  renderQuestion(currentQuestion, false); // no animation on first render
+  renderQuestion(currentQuestion, false);
   renderCommitments();
   updateGauges();
-  updateTurn();
+  updateHUD();
   if (restored && state.history.length > 0) showToast('Continuing from last session');
   setupListeners();
 }
 
-// ── API key modal ──────────────────────────────────────────────────────────────
+// ── Modals ─────────────────────────────────────────────────────────────────────
 function showApiKeyModal() { apiKeyModal.classList.remove('hidden'); }
 function hideApiKeyModal() { apiKeyModal.classList.add('hidden'); }
 
-// ── Bottom sheet ───────────────────────────────────────────────────────────────
-function openSheet() {
-  commitmentsSheet.classList.add('open');
-  sheetScrim.classList.remove('hidden');
-}
-function closeSheet() {
-  commitmentsSheet.classList.remove('open');
-  sheetScrim.classList.add('hidden');
-}
+function openSheet()  { commitmentsSheet.classList.add('open'); sheetScrim.classList.remove('hidden'); }
+function closeSheet() { commitmentsSheet.classList.remove('open'); sheetScrim.classList.add('hidden'); }
 
 // ── Toast ──────────────────────────────────────────────────────────────────────
 function showToast(msg) {
   const t = $('toast');
   t.textContent = msg;
-  t.classList.remove('toast-hidden');
-  t.classList.add('toast-show');
-  setTimeout(() => {
-    t.classList.remove('toast-show');
-    t.classList.add('toast-hidden');
-  }, 2500);
+  t.classList.replace('toast-hidden', 'toast-show');
+  setTimeout(() => t.classList.replace('toast-show', 'toast-hidden'), 2400);
+}
+
+// ── Floating score text ────────────────────────────────────────────────────────
+function spawnFloat(text, anchorEl) {
+  const el = document.createElement('div');
+  el.className = 'float-score';
+  el.textContent = text;
+  document.body.appendChild(el);
+  const r = anchorEl.getBoundingClientRect();
+  el.style.left = (r.left + r.width / 2) + 'px';
+  el.style.top  = (r.top - 4) + 'px';
+  setTimeout(() => el.remove(), 900);
+}
+
+// ── Ripple ─────────────────────────────────────────────────────────────────────
+function addRipple(btn, e) {
+  const r = btn.getBoundingClientRect();
+  const ripple = document.createElement('span');
+  ripple.className = 'ripple';
+  ripple.style.left = (e.clientX - r.left) + 'px';
+  ripple.style.top  = (e.clientY - r.top) + 'px';
+  btn.appendChild(ripple);
+  setTimeout(() => ripple.remove(), 600);
 }
 
 // ── Render helpers ─────────────────────────────────────────────────────────────
 function renderQuestion(q, animate = true) {
+  const doRender = () => {
+    questionStem.textContent = q.stem;
+    questionStem.classList.remove('q-exit');
+    if (animate) {
+      questionStem.classList.add('q-enter');
+      setTimeout(() => questionStem.classList.remove('q-enter'), 280);
+    }
+    renderOptions(q.options);
+  };
+
   if (animate) {
     questionStem.classList.add('q-exit');
-    setTimeout(() => {
-      questionStem.textContent = q.stem;
-      questionStem.classList.remove('q-exit');
-      questionStem.classList.add('q-enter');
-      setTimeout(() => questionStem.classList.remove('q-enter'), 300);
-      renderOptions(q.options);
-    }, 140);
+    setTimeout(doRender, 140);
   } else {
-    questionStem.textContent = q.stem;
-    renderOptions(q.options);
+    doRender();
   }
 }
 
 function renderOptions(options) {
   optionsCont.innerHTML = '';
   options.forEach((opt, i) => {
+    const accent = ACCENTS[i % ACCENTS.length];
     const btn = document.createElement('button');
     btn.className = 'option-btn';
-    btn.style.animationDelay = `${i * 55}ms`;
-    btn.textContent = opt;
-    btn.addEventListener('click', () => {
+    btn.style.cssText = `
+      --accent: ${accent.color};
+      --glow: ${accent.glow};
+      --accent-alpha: ${accent.alpha};
+      animation-delay: ${i * 55}ms;
+    `;
+    btn.innerHTML = `<span class="opt-num">${i + 1}</span><span>${escHtml(opt)}</span>`;
+
+    btn.addEventListener('click', e => {
       if (isLoading) return;
+      addRipple(btn, e);
       btn.classList.add('option-selected');
-      setTimeout(() => dispatch({ type: 'option', value: opt }), 120);
+      setTimeout(() => dispatch({ type: 'option', value: opt }), 130);
     });
     optionsCont.appendChild(btn);
   });
@@ -139,23 +175,23 @@ function renderOptions(options) {
 
 function renderCommitments() {
   const n = state.commitments.length;
-  const prev = commitmentsLabel.dataset.count | 0;
+  const prev = parseInt(commitmentsLabel.dataset.count || '0');
 
   commitmentsLabel.textContent = n === 0 ? 'No commitments'
     : n === 1 ? '1 commitment' : `${n} commitments`;
   commitmentsLabel.dataset.count = n;
+  commitmentsLabel.classList.toggle('has-items', n > 0);
 
   if (n > prev) {
     commitmentsLabel.classList.add('count-pop');
+    spawnFloat(`+${n - prev} commitment${n - prev > 1 ? 's' : ''}`, $('commitments-btn'));
     setTimeout(() => commitmentsLabel.classList.remove('count-pop'), 400);
   }
 
-  if (n === 0) {
-    commitmentsList.innerHTML =
-      '<p class="text-sm text-gray-600 italic py-2">None yet — keep answering.</p>';
-    return;
-  }
-  commitmentsList.innerHTML = '';
+  commitmentsList.innerHTML = n === 0
+    ? '<p style="font-size:0.82rem;color:#374151;font-style:italic;padding:4px 0">None yet — keep answering.</p>'
+    : '';
+
   state.commitments.forEach(c => {
     const div = document.createElement('div');
     div.className = 'commitment-item';
@@ -174,18 +210,24 @@ function updateGauges() {
   uPct.textContent = u + '%';
   eBar.style.width = e + '%';
   ePct.textContent = e + '%';
-  // glow draft button when endorsement is high
-  showDraftBtn.classList.toggle('draft-glow', e >= 60);
+  showDraftBtn.classList.toggle('ready', e >= 55);
 }
 
-function updateTurn() {
-  if (turnEl) turnEl.textContent = turnCount > 0 ? `turn ${turnCount}` : '';
+function updateHUD() {
+  if (turnCount > 0) {
+    turnBadge.textContent = `Q${turnCount}`;
+    turnBadge.classList.remove('hidden');
+  }
+  const phase = getPhase(state.commitments.length);
+  phaseBadge.textContent = phase.label;
+  phaseBadge.style.color = phase.color;
+  phaseBadge.style.borderColor = phase.color;
 }
 
 function showDraft() {
   draftContent.innerHTML = state.artifact
     ? renderMd(state.artifact)
-    : '<p class="text-gray-500 text-sm italic">Answer a few more questions, then try again.</p>';
+    : '<p style="color:#4b5563;font-style:italic;font-size:0.85rem">Answer a few more questions, then try again.</p>';
   draftOverlay.classList.remove('hidden');
   draftDot.classList.add('hidden');
   state.artifact_stale = false;
@@ -214,27 +256,16 @@ async function dispatch(action, requestDraft = false) {
   try {
     const result = await callClaude(apiKey, state, action, requestDraft);
 
-    if (Array.isArray(result.commitments_added)) {
-      result.commitments_added.forEach(c => {
-        if (c && !state.commitments.includes(c)) state.commitments.push(c);
-      });
-    }
-    if (Array.isArray(result.commitments_removed)) {
-      state.commitments = state.commitments.filter(
-        c => !result.commitments_removed.includes(c)
-      );
-    }
+    if (Array.isArray(result.commitments_added))
+      result.commitments_added.forEach(c => { if (c && !state.commitments.includes(c)) state.commitments.push(c); });
+    if (Array.isArray(result.commitments_removed))
+      state.commitments = state.commitments.filter(c => !result.commitments_removed.includes(c));
     if (result.prose_summary)                    state.prose = result.prose_summary;
     if (typeof result.understanding === 'number') state.gauges.understanding = result.understanding;
     if (typeof result.endorsement   === 'number') state.gauges.endorsement   = result.endorsement;
 
     turnCount++;
-    state.history.push({
-      question: currentQuestion.stem,
-      options: currentQuestion.options,
-      action,
-      answer: action.value || action.type
-    });
+    state.history.push({ question: currentQuestion.stem, options: currentQuestion.options, action, answer: action.value || action.type });
 
     if (result.next_question?.stem && Array.isArray(result.next_question.options)) {
       currentQuestion = result.next_question;
@@ -254,7 +285,7 @@ async function dispatch(action, requestDraft = false) {
 
     renderCommitments();
     updateGauges();
-    updateTurn();
+    updateHUD();
     saveState();
 
   } catch (err) {
@@ -270,32 +301,22 @@ function setupListeners() {
     const k = $('api-key-input').value.trim();
     if (k) { apiKey = k; localStorage.setItem('anthropic_key', k); hideApiKeyModal(); }
   });
-  $('api-key-input').addEventListener('keydown', e => {
-    if (e.key === 'Enter') $('api-key-submit').click();
-  });
+  $('api-key-input').addEventListener('keydown', e => { if (e.key === 'Enter') $('api-key-submit').click(); });
 
   $('clear-key-btn').addEventListener('click', () => {
     localStorage.removeItem('anthropic_key');
-    apiKey = null;
-    $('api-key-input').value = '';
-    showApiKeyModal();
+    apiKey = null; $('api-key-input').value = ''; showApiKeyModal();
   });
 
   $('reset-btn').addEventListener('click', () => {
     if (!confirm('Start a new session?')) return;
-    state = EMPTY_STATE();
-    currentQuestion = { ...COLD_START };
-    turnCount = 0;
+    state = EMPTY_STATE(); currentQuestion = { ...COLD_START }; turnCount = 0;
     localStorage.removeItem(STORAGE_KEY);
     renderQuestion(currentQuestion, false);
-    renderCommitments();
-    updateGauges();
-    updateTurn();
-    draftDot.classList.add('hidden');
-    errorEl.classList.add('hidden');
-    freetextArea.classList.add('hidden');
-    freetextInput.value = '';
-    closeSheet();
+    renderCommitments(); updateGauges(); updateHUD();
+    draftDot.classList.add('hidden'); errorEl.classList.add('hidden');
+    freetextArea.classList.add('hidden'); freetextInput.value = '';
+    closeSheet(); showDraftBtn.classList.remove('ready');
   });
 
   $('pass-btn').addEventListener('click', () => { if (!isLoading) dispatch({ type: 'pass' }); });
@@ -305,29 +326,19 @@ function setupListeners() {
     freetextArea.classList.toggle('hidden');
     if (!freetextArea.classList.contains('hidden')) freetextInput.focus();
   });
-  $('freetext-cancel').addEventListener('click', () => {
-    freetextArea.classList.add('hidden');
-    freetextInput.value = '';
-  });
+  $('freetext-cancel').addEventListener('click', () => { freetextArea.classList.add('hidden'); freetextInput.value = ''; });
   $('freetext-submit').addEventListener('click', () => {
     const v = freetextInput.value.trim();
     if (!v || isLoading) return;
-    freetextArea.classList.add('hidden');
-    freetextInput.value = '';
+    freetextArea.classList.add('hidden'); freetextInput.value = '';
     dispatch({ type: 'freetext', value: v });
   });
-  freetextInput.addEventListener('keydown', e => {
-    if (e.key === 'Enter') $('freetext-submit').click();
-  });
+  freetextInput.addEventListener('keydown', e => { if (e.key === 'Enter') $('freetext-submit').click(); });
 
-  showDraftBtn.addEventListener('click', () => {
-    if (!isLoading) dispatch({ type: 'draft' }, true);
-  });
+  showDraftBtn.addEventListener('click', () => { if (!isLoading) dispatch({ type: 'draft' }, true); });
 
   $('close-draft').addEventListener('click', () => draftOverlay.classList.add('hidden'));
-  draftOverlay.addEventListener('click', e => {
-    if (e.target === draftOverlay) draftOverlay.classList.add('hidden');
-  });
+  draftOverlay.addEventListener('click', e => { if (e.target === draftOverlay) draftOverlay.classList.add('hidden'); });
 
   $('commitments-btn').addEventListener('click', openSheet);
   sheetScrim.addEventListener('click', closeSheet);
@@ -336,11 +347,10 @@ function setupListeners() {
 // ── Utilities ──────────────────────────────────────────────────────────────────
 function renderMd(text) {
   if (typeof marked !== 'undefined' && marked.parse) return marked.parse(text);
-  return `<pre class="whitespace-pre-wrap text-sm text-gray-300">${escHtml(text)}</pre>`;
+  return `<pre style="white-space:pre-wrap;font-size:0.82rem;color:#cbd5e1">${escHtml(text)}</pre>`;
 }
-
 function escHtml(s) {
-  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
 
 init();
