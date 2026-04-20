@@ -1,23 +1,47 @@
 import { callClaude } from './claude.js';
 
 // ── State ──────────────────────────────────────────────────────────────────────
-let state = {
+const STORAGE_KEY = 'aimidwife_v1';
+
+const EMPTY_STATE = () => ({
   commitments: [],
   prose: '',
   history: [],
   gauges: { understanding: 0, endorsement: 0 },
   artifact: null,
   artifact_stale: false
-};
+});
 
 const COLD_START = {
   stem: "What's this?",
   options: ["Doing", "Figuring out", "Not sure"]
 };
 
+let state = EMPTY_STATE();
 let currentQuestion = { ...COLD_START };
 let apiKey = localStorage.getItem('anthropic_key') || null;
 let isLoading = false;
+let turnCount = 0;
+
+// ── Persistence ────────────────────────────────────────────────────────────────
+function saveState() {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ state, currentQuestion, turnCount }));
+  } catch (_) {}
+}
+
+function loadSaved() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null');
+    if (saved?.state && saved?.currentQuestion) {
+      state = { ...EMPTY_STATE(), ...saved.state };
+      currentQuestion = saved.currentQuestion;
+      turnCount = saved.turnCount || state.history.length;
+      return true;
+    }
+  } catch (_) {}
+  return false;
+}
 
 // ── DOM refs ───────────────────────────────────────────────────────────────────
 const $ = id => document.getElementById(id);
@@ -27,6 +51,7 @@ const loadingEl         = $('loading');
 const errorEl           = $('error-msg');
 const commitmentsList   = $('commitments-list');
 const commitmentsLabel  = $('commitments-label');
+const turnEl            = $('turn-counter');
 const uBar              = $('understanding-bar');
 const uPct              = $('understanding-pct');
 const eBar              = $('endorsement-bar');
@@ -43,9 +68,13 @@ const sheetScrim        = $('sheet-scrim');
 
 // ── Bootstrap ─────────────────────────────────────────────────────────────────
 function init() {
+  const restored = loadSaved();
   if (!apiKey) showApiKeyModal();
-  renderQuestion(currentQuestion);
+  renderQuestion(currentQuestion, false); // no animation on first render
   renderCommitments();
+  updateGauges();
+  updateTurn();
+  if (restored && state.history.length > 0) showToast('Continuing from last session');
   setupListeners();
 }
 
@@ -63,16 +92,46 @@ function closeSheet() {
   sheetScrim.classList.add('hidden');
 }
 
+// ── Toast ──────────────────────────────────────────────────────────────────────
+function showToast(msg) {
+  const t = $('toast');
+  t.textContent = msg;
+  t.classList.remove('toast-hidden');
+  t.classList.add('toast-show');
+  setTimeout(() => {
+    t.classList.remove('toast-show');
+    t.classList.add('toast-hidden');
+  }, 2500);
+}
+
 // ── Render helpers ─────────────────────────────────────────────────────────────
-function renderQuestion(q) {
-  questionStem.textContent = q.stem;
+function renderQuestion(q, animate = true) {
+  if (animate) {
+    questionStem.classList.add('q-exit');
+    setTimeout(() => {
+      questionStem.textContent = q.stem;
+      questionStem.classList.remove('q-exit');
+      questionStem.classList.add('q-enter');
+      setTimeout(() => questionStem.classList.remove('q-enter'), 300);
+      renderOptions(q.options);
+    }, 140);
+  } else {
+    questionStem.textContent = q.stem;
+    renderOptions(q.options);
+  }
+}
+
+function renderOptions(options) {
   optionsCont.innerHTML = '';
-  q.options.forEach(opt => {
+  options.forEach((opt, i) => {
     const btn = document.createElement('button');
     btn.className = 'option-btn';
+    btn.style.animationDelay = `${i * 55}ms`;
     btn.textContent = opt;
     btn.addEventListener('click', () => {
-      if (!isLoading) dispatch({ type: 'option', value: opt });
+      if (isLoading) return;
+      btn.classList.add('option-selected');
+      setTimeout(() => dispatch({ type: 'option', value: opt }), 120);
     });
     optionsCont.appendChild(btn);
   });
@@ -80,12 +139,20 @@ function renderQuestion(q) {
 
 function renderCommitments() {
   const n = state.commitments.length;
-  commitmentsLabel.textContent = n === 0 ? 'No commitments yet'
+  const prev = commitmentsLabel.dataset.count | 0;
+
+  commitmentsLabel.textContent = n === 0 ? 'No commitments'
     : n === 1 ? '1 commitment' : `${n} commitments`;
+  commitmentsLabel.dataset.count = n;
+
+  if (n > prev) {
+    commitmentsLabel.classList.add('count-pop');
+    setTimeout(() => commitmentsLabel.classList.remove('count-pop'), 400);
+  }
 
   if (n === 0) {
     commitmentsList.innerHTML =
-      '<p class="text-sm text-gray-600 italic py-2">None yet — keep answering questions.</p>';
+      '<p class="text-sm text-gray-600 italic py-2">None yet — keep answering.</p>';
     return;
   }
   commitmentsList.innerHTML = '';
@@ -107,6 +174,12 @@ function updateGauges() {
   uPct.textContent = u + '%';
   eBar.style.width = e + '%';
   ePct.textContent = e + '%';
+  // glow draft button when endorsement is high
+  showDraftBtn.classList.toggle('draft-glow', e >= 60);
+}
+
+function updateTurn() {
+  if (turnEl) turnEl.textContent = turnCount > 0 ? `turn ${turnCount}` : '';
 }
 
 function showDraft() {
@@ -132,7 +205,7 @@ function showError(msg) {
   setTimeout(() => errorEl.classList.add('hidden'), 7000);
 }
 
-// ── Core action dispatcher ─────────────────────────────────────────────────────
+// ── Core dispatcher ────────────────────────────────────────────────────────────
 async function dispatch(action, requestDraft = false) {
   if (!apiKey) { showApiKeyModal(); return; }
   setLoading(true);
@@ -151,10 +224,11 @@ async function dispatch(action, requestDraft = false) {
         c => !result.commitments_removed.includes(c)
       );
     }
-    if (result.prose_summary)              state.prose = result.prose_summary;
+    if (result.prose_summary)                    state.prose = result.prose_summary;
     if (typeof result.understanding === 'number') state.gauges.understanding = result.understanding;
     if (typeof result.endorsement   === 'number') state.gauges.endorsement   = result.endorsement;
 
+    turnCount++;
     state.history.push({
       question: currentQuestion.stem,
       options: currentQuestion.options,
@@ -180,6 +254,8 @@ async function dispatch(action, requestDraft = false) {
 
     renderCommitments();
     updateGauges();
+    updateTurn();
+    saveState();
 
   } catch (err) {
     showError(err.message || 'Something went wrong. Try again.');
@@ -206,16 +282,15 @@ function setupListeners() {
   });
 
   $('reset-btn').addEventListener('click', () => {
-    if (!confirm('Reset everything and start over?')) return;
-    state = {
-      commitments: [], prose: '', history: [],
-      gauges: { understanding: 0, endorsement: 0 },
-      artifact: null, artifact_stale: false
-    };
+    if (!confirm('Start a new session?')) return;
+    state = EMPTY_STATE();
     currentQuestion = { ...COLD_START };
-    renderQuestion(currentQuestion);
+    turnCount = 0;
+    localStorage.removeItem(STORAGE_KEY);
+    renderQuestion(currentQuestion, false);
     renderCommitments();
     updateGauges();
+    updateTurn();
     draftDot.classList.add('hidden');
     errorEl.classList.add('hidden');
     freetextArea.classList.add('hidden');
