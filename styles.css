@@ -1,87 +1,148 @@
-/* Option buttons */
+/* ── Layout ───────────────────────────────────────────────────────────────── */
+.app-shell {
+  height: 100dvh; /* dynamic viewport height — handles mobile browser chrome */
+  height: 100vh;  /* fallback */
+  overflow: hidden;
+}
+.safe-bottom {
+  padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
+}
+
+/* ── Option buttons ───────────────────────────────────────────────────────── */
 .option-btn {
   display: block;
   width: 100%;
   text-align: left;
   padding: 1.1rem 1.25rem;
-  border-radius: 1rem;
-  background: #1f2937;
-  border: 1.5px solid #374151;
-  color: #f3f4f6;
-  font-size: 1rem;
+  border-radius: 1.25rem;
+  background: #1a2030;
+  border: 1.5px solid #2d3748;
+  color: #f0f4f8;
+  font-size: 1.05rem;
   font-weight: 500;
   line-height: 1.3;
   cursor: pointer;
-  transition: background 0.15s, border-color 0.15s, transform 0.1s;
+  transition: background 0.12s, border-color 0.12s, transform 0.1s;
   -webkit-tap-highlight-color: transparent;
-  min-height: 56px;
+  min-height: 60px;
 }
 .option-btn:hover:not(:disabled) {
-  background: #2d3748;
-  border-color: #4b5563;
+  background: #243044;
+  border-color: #4a5568;
 }
 .option-btn:active:not(:disabled) {
   transform: scale(0.97);
-  background: #374151;
+  background: #2d3a50;
 }
 .option-btn:disabled {
-  opacity: 0.45;
+  opacity: 0.4;
   cursor: not-allowed;
 }
 
-/* Commitment items */
+/* ── Secondary buttons (Free-text / Pass / Skip) ─────────────────────────── */
+.sec-btn {
+  font-size: 0.875rem;
+  color: #6b7280;
+  border: 1.5px solid #374151;
+  border-radius: 1rem;
+  padding: 0.625rem 1rem;
+  min-height: 44px;
+  cursor: pointer;
+  background: transparent;
+  transition: color 0.12s, border-color 0.12s, background 0.12s;
+  -webkit-tap-highlight-color: transparent;
+}
+.sec-btn:hover:not(:disabled) {
+  color: #e2e8f0;
+  border-color: #6b7280;
+  background: #1f2937;
+}
+.sec-btn:active:not(:disabled) {
+  background: #374151;
+}
+.sec-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* ── Commitment items ─────────────────────────────────────────────────────── */
 .commitment-item {
   display: flex;
   align-items: flex-start;
-  gap: 0.375rem;
-  padding: 0.375rem 0.5rem;
-  border-radius: 0.5rem;
-  font-size: 0.75rem;
+  gap: 0.5rem;
+  padding: 0.625rem 0.75rem;
+  border-radius: 0.875rem;
+  font-size: 0.875rem;
   color: #d1d5db;
+  background: #1f2937;
   cursor: pointer;
-  transition: background 0.15s, color 0.15s;
+  transition: background 0.12s, color 0.12s;
   -webkit-tap-highlight-color: transparent;
+  min-height: 44px;
 }
-.commitment-item:hover {
-  background: rgba(127, 29, 29, 0.3);
+.commitment-item:hover,
+.commitment-item:active {
+  background: rgba(127, 29, 29, 0.35);
   color: #fca5a5;
 }
 .retract-x {
-  color: #6b7280;
-  font-size: 0.75rem;
-  line-height: 1.2;
+  color: #4b5563;
+  font-size: 1rem;
+  line-height: 1.3;
   flex-shrink: 0;
-  margin-top: 0.05rem;
-  transition: color 0.15s;
+  transition: color 0.12s;
 }
-.commitment-item:hover .retract-x {
+.commitment-item:hover .retract-x,
+.commitment-item:active .retract-x {
   color: #f87171;
 }
 
-/* Sidebar — desktop always visible, mobile as overlay */
-.sidebar {
-  display: none;
-}
-@media (min-width: 768px) {
-  .sidebar {
-    display: flex;
-  }
-}
-.sidebar.sidebar-open {
-  display: flex;
+/* ── Bottom sheet ─────────────────────────────────────────────────────────── */
+.bottom-sheet {
   position: fixed;
-  top: 0;
-  right: 0;
   bottom: 0;
-  z-index: 30;
-  box-shadow: -4px 0 24px rgba(0,0,0,0.5);
+  left: 0;
+  right: 0;
+  background: #111827;
+  border-top: 1px solid #1f2937;
+  border-radius: 1.5rem 1.5rem 0 0;
+  transform: translateY(100%);
+  transition: transform 0.32s cubic-bezier(0.32, 0.72, 0, 1);
+  z-index: 40;
+  max-height: 72vh;
+  overflow-y: auto;
+  padding-bottom: max(1rem, env(safe-area-inset-bottom));
+}
+.bottom-sheet.open {
+  transform: translateY(0);
+}
+.sheet-handle-wrap {
+  display: flex;
+  justify-content: center;
+  padding: 0.75rem 0 0.5rem;
+}
+.sheet-handle {
+  width: 2.5rem;
+  height: 0.25rem;
+  background: #374151;
+  border-radius: 9999px;
 }
 
-/* Loading dots animation */
+/* ── Draft sheet (slides up from bottom) ─────────────────────────────────── */
+.draft-sheet {
+  max-height: 88vh;
+  animation: slide-up 0.3s cubic-bezier(0.32, 0.72, 0, 1);
+}
+@keyframes slide-up {
+  from { transform: translateY(100%); }
+  to   { transform: translateY(0); }
+}
+
+/* ── Loading dots ─────────────────────────────────────────────────────────── */
 .loading-dots span {
   display: inline-block;
-  width: 5px;
-  height: 5px;
+  width: 6px;
+  height: 6px;
   border-radius: 50%;
   background: #6b7280;
   animation: dot-bounce 1.2s infinite ease-in-out;
@@ -89,60 +150,39 @@
 .loading-dots span:nth-child(2) { animation-delay: 0.2s; }
 .loading-dots span:nth-child(3) { animation-delay: 0.4s; }
 @keyframes dot-bounce {
-  0%, 80%, 100% { transform: scale(0.6); opacity: 0.4; }
-  40%            { transform: scale(1);   opacity: 1;   }
+  0%, 80%, 100% { transform: scale(0.5); opacity: 0.3; }
+  40%            { transform: scale(1);  opacity: 1;   }
 }
 
-/* Draft prose styles */
+/* ── Draft prose ──────────────────────────────────────────────────────────── */
 .prose-dark h1, .prose-dark h2, .prose-dark h3 {
-  color: #f1f5f9;
-  font-weight: 600;
-  margin: 1em 0 0.4em;
-  line-height: 1.3;
+  color: #f1f5f9; font-weight: 700; margin: 1.1em 0 0.4em; line-height: 1.25;
 }
 .prose-dark h1 { font-size: 1.2rem; }
 .prose-dark h2 { font-size: 1.05rem; }
 .prose-dark h3 { font-size: 0.95rem; }
-.prose-dark p  { color: #cbd5e1; margin-bottom: 0.7em; line-height: 1.65; }
+.prose-dark p  { color: #cbd5e1; margin-bottom: 0.75em; line-height: 1.7; }
 .prose-dark ul, .prose-dark ol {
-  color: #cbd5e1;
-  padding-left: 1.4em;
-  margin-bottom: 0.7em;
+  color: #cbd5e1; padding-left: 1.4em; margin-bottom: 0.75em;
 }
-.prose-dark li { margin-bottom: 0.25em; line-height: 1.55; }
+.prose-dark li { margin-bottom: 0.3em; line-height: 1.6; }
 .prose-dark code {
-  background: #1e293b;
-  padding: 0.1em 0.3em;
-  border-radius: 0.25em;
-  font-size: 0.85em;
-  color: #93c5fd;
+  background: #1e293b; padding: 0.15em 0.35em; border-radius: 0.3em;
+  font-size: 0.85em; color: #93c5fd;
 }
 .prose-dark pre {
-  background: #0f172a;
-  border: 1px solid #1e293b;
-  padding: 0.75em 1em;
-  border-radius: 0.5em;
-  overflow-x: auto;
-  margin-bottom: 0.7em;
+  background: #0f172a; border: 1px solid #1e293b; padding: 0.875em 1em;
+  border-radius: 0.75em; overflow-x: auto; margin-bottom: 0.75em;
 }
-.prose-dark pre code {
-  background: none;
-  padding: 0;
-  color: #e2e8f0;
-  font-size: 0.8rem;
-}
+.prose-dark pre code { background: none; padding: 0; color: #e2e8f0; font-size: 0.8rem; }
 .prose-dark blockquote {
-  border-left: 3px solid #334155;
-  padding-left: 0.9em;
-  color: #94a3b8;
-  margin: 0 0 0.7em;
-  font-style: italic;
+  border-left: 3px solid #334155; padding-left: 1em;
+  color: #94a3b8; margin: 0 0 0.75em; font-style: italic;
 }
 .prose-dark strong { color: #e2e8f0; }
 .prose-dark a { color: #60a5fa; text-decoration: underline; }
 
-/* Scrollbar styling */
-::-webkit-scrollbar { width: 6px; height: 6px; }
+/* ── Scrollbar ────────────────────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 4px; height: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: #374151; border-radius: 3px; }
-::-webkit-scrollbar-thumb:hover { background: #4b5563; }
+::-webkit-scrollbar-thumb { background: #374151; border-radius: 2px; }

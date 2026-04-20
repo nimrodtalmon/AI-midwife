@@ -2,211 +2,193 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>AI-Midwife</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdn.jsdelivr.net/npm/marked@9/marked.min.js"></script>
   <link rel="stylesheet" href="styles.css">
 </head>
-<body class="bg-gray-950 text-gray-100 min-h-screen">
+<body class="bg-gray-950 text-gray-100">
 
   <!-- ── API Key Modal ─────────────────────────────────────────────────────── -->
   <div id="api-key-modal"
-    class="fixed inset-0 bg-black/80 flex items-center justify-center z-50 hidden">
-    <div class="bg-gray-900 border border-gray-800 rounded-2xl p-6 max-w-sm w-full mx-4 shadow-xl">
-      <h2 class="text-base font-semibold mb-1">Anthropic API Key</h2>
-      <p class="text-gray-400 text-sm mb-4">
-        Anthropic (<code class="text-gray-300">sk-ant-…</code>) or OpenRouter (<code class="text-gray-300">sk-or-…</code>) key.
-        Stored in your browser only.
+    class="fixed inset-0 bg-black/80 flex items-center justify-center z-50 hidden px-5">
+    <div class="bg-gray-900 border border-gray-800 rounded-2xl p-6 w-full max-w-sm shadow-2xl">
+      <div class="text-2xl mb-2">✦</div>
+      <h2 class="text-base font-bold mb-1">Paste your API key</h2>
+      <p class="text-gray-400 text-sm mb-5">
+        Anthropic <span class="text-gray-500 font-mono text-xs">sk-ant-…</span>
+        or OpenRouter <span class="text-gray-500 font-mono text-xs">sk-or-…</span>.
+        Stays in your browser.
       </p>
-      <input id="api-key-input" type="password" placeholder="sk-ant-… or sk-or-…"
-        class="w-full bg-gray-800 border border-gray-700 rounded-xl px-3 py-2 text-sm mb-3
+      <input id="api-key-input" type="password" placeholder="sk-…"
+        autocomplete="off" autocorrect="off" spellcheck="false"
+        class="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 text-sm mb-3
                focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500">
       <button id="api-key-submit"
-        class="w-full bg-blue-600 hover:bg-blue-500 text-white rounded-xl py-2 text-sm
-               font-medium transition-colors">
-        Start →
+        class="w-full bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white
+               rounded-xl py-3 text-sm font-semibold transition-colors">
+        Let's go →
       </button>
     </div>
   </div>
 
   <!-- ── Draft Overlay ─────────────────────────────────────────────────────── -->
   <div id="draft-overlay"
-    class="fixed inset-0 bg-black/80 flex items-start justify-center z-40 hidden
-           pt-8 pb-8 px-4 overflow-y-auto">
-    <div class="bg-gray-900 border border-gray-800 rounded-2xl w-full max-w-2xl
-                flex flex-col shadow-xl" style="max-height: calc(100vh - 4rem)">
-      <div class="flex items-center justify-between px-5 py-4 border-b border-gray-800
-                  flex-shrink-0">
-        <h2 class="text-base font-semibold">Draft</h2>
+    class="fixed inset-0 bg-black/80 flex items-end justify-center z-40 hidden">
+    <div class="bg-gray-900 border-t border-gray-800 rounded-t-3xl w-full max-w-2xl
+                flex flex-col shadow-2xl draft-sheet">
+      <div class="flex items-center justify-between px-5 pt-5 pb-3 flex-shrink-0">
+        <h2 class="text-base font-bold">Your draft</h2>
         <button id="close-draft"
-          class="text-gray-400 hover:text-white text-2xl leading-none w-8 h-8
-                 flex items-center justify-center rounded-lg hover:bg-gray-800
-                 transition-colors">
-          ×
-        </button>
+          class="text-gray-400 hover:text-white w-8 h-8 flex items-center justify-center
+                 rounded-xl hover:bg-gray-800 transition-colors text-xl">×</button>
       </div>
       <div id="draft-content"
-        class="prose-dark overflow-y-auto flex-1 px-5 py-4 text-sm min-h-0">
+        class="prose-dark overflow-y-auto flex-1 px-5 pb-8 text-sm min-h-0">
       </div>
     </div>
   </div>
 
-  <!-- ── Page Layout ───────────────────────────────────────────────────────── -->
-  <div class="flex h-screen overflow-hidden">
+  <!-- ── Commitments Bottom Sheet ──────────────────────────────────────────── -->
+  <div id="sheet-scrim" class="fixed inset-0 bg-black/60 z-30 hidden"></div>
+  <div id="commitments-sheet" class="bottom-sheet">
+    <div class="sheet-handle-wrap">
+      <div class="sheet-handle"></div>
+    </div>
+    <div class="px-5 pb-10">
+      <div class="flex items-center justify-between mb-4">
+        <h3 class="text-sm font-bold text-gray-200">Commitments</h3>
+        <span class="text-xs text-gray-500">tap to retract</span>
+      </div>
+      <div id="commitments-list" class="flex flex-col gap-2"></div>
+    </div>
+  </div>
 
-    <!-- Main Area -->
-    <div class="flex-1 flex flex-col min-w-0 h-full">
+  <!-- ── App Shell ─────────────────────────────────────────────────────────── -->
+  <div class="flex flex-col app-shell">
 
-      <!-- Top Bar -->
-      <div class="flex items-center justify-between px-4 py-3 border-b border-gray-800
-                  flex-shrink-0">
-        <span class="text-sm font-bold text-blue-400 tracking-tight select-none">
-          AI-Midwife
-        </span>
-        <div class="flex items-center gap-1">
+    <!-- Header -->
+    <div class="flex-shrink-0 bg-gray-950 border-b border-gray-800/60 px-4 pt-3 pb-3">
+      <div class="flex items-center justify-between mb-3">
+        <span class="text-sm font-bold text-blue-400 tracking-tight">AI-Midwife</span>
+        <div class="flex gap-1">
           <button id="clear-key-btn"
-            class="text-xs text-gray-500 hover:text-gray-300 px-2 py-1 rounded-lg
+            class="text-xs text-gray-600 hover:text-gray-300 px-2 py-1 rounded-lg
                    hover:bg-gray-800 transition-colors">
-            API key
+            key
           </button>
           <button id="reset-btn"
-            class="text-xs text-gray-500 hover:text-red-400 px-2 py-1 rounded-lg
+            class="text-xs text-gray-600 hover:text-red-400 px-2 py-1 rounded-lg
                    hover:bg-gray-800 transition-colors">
-            Reset
-          </button>
-          <button id="toggle-sidebar"
-            class="md:hidden text-gray-500 hover:text-gray-300 px-2 py-1 rounded-lg
-                   hover:bg-gray-800 transition-colors text-base ml-1">
-            ☰
+            reset
           </button>
         </div>
       </div>
-
-      <!-- Question Area -->
-      <div class="flex-1 flex flex-col items-center justify-center p-6 overflow-y-auto">
-        <div class="w-full max-w-md">
-
-          <!-- Stem + options -->
-          <div id="question-area">
-            <p id="question-stem"
-              class="text-xl font-semibold mb-5 leading-snug text-gray-100">
-            </p>
-            <div id="options-container" class="flex flex-col gap-3 mb-5"></div>
-
-            <!-- Secondary row -->
-            <div class="flex gap-2 flex-wrap">
-              <button id="freetext-btn"
-                class="text-sm text-gray-400 hover:text-gray-200 border border-gray-700
-                       hover:border-gray-500 rounded-xl px-4 py-2.5 transition-colors
-                       min-h-[44px]">
-                Free-text
-              </button>
-              <button id="pass-btn"
-                class="text-sm text-gray-400 hover:text-gray-200 border border-gray-700
-                       hover:border-gray-500 rounded-xl px-4 py-2.5 transition-colors
-                       min-h-[44px]">
-                Pass
-              </button>
-              <button id="skip-btn"
-                class="text-sm text-gray-400 hover:text-gray-200 border border-gray-700
-                       hover:border-gray-500 rounded-xl px-4 py-2.5 transition-colors
-                       min-h-[44px]">
-                Skip
-              </button>
-            </div>
-          </div>
-
-          <!-- Free-text input -->
-          <div id="freetext-area" class="hidden mt-4">
-            <input id="freetext-input" type="text" placeholder="Say anything…"
-              class="w-full bg-gray-800 border border-gray-700 rounded-xl px-3 py-2 text-sm
-                     mb-2 focus:outline-none focus:border-blue-500 focus:ring-1
-                     focus:ring-blue-500">
-            <div class="flex gap-2">
-              <button id="freetext-submit"
-                class="text-xs bg-blue-600 hover:bg-blue-500 text-white rounded-lg
-                       px-3 py-1.5 transition-colors">
-                Send
-              </button>
-              <button id="freetext-cancel"
-                class="text-xs text-gray-400 hover:text-gray-200 px-3 py-1.5
-                       transition-colors">
-                Cancel
-              </button>
-            </div>
-          </div>
-
-          <!-- Loading -->
-          <div id="loading" class="hidden mt-5 flex items-center gap-2 text-gray-500 text-sm">
-            <div class="loading-dots flex gap-1">
-              <span></span><span></span><span></span>
-            </div>
-            <span>Thinking…</span>
-          </div>
-
-          <!-- Error -->
-          <div id="error-msg"
-            class="hidden mt-4 text-red-300 text-sm bg-red-900/20 border border-red-800/40
-                   rounded-xl px-3 py-2.5">
-          </div>
-
-        </div>
-      </div>
-    </div>
-
-    <!-- ── Sidebar ──────────────────────────────────────────────────────────── -->
-    <div id="sidebar"
-      class="sidebar w-72 bg-gray-900 border-l border-gray-800 flex flex-col p-4
-             overflow-y-auto flex-shrink-0">
-
       <!-- Gauges -->
-      <div class="mb-5">
-        <div class="mb-3">
-          <div class="flex justify-between items-center mb-1.5">
-            <span class="text-xs text-gray-500 font-medium uppercase tracking-wider">
-              Understanding
-            </span>
-            <span id="understanding-pct" class="text-xs text-gray-400 tabular-nums">0%</span>
+      <div class="flex gap-4">
+        <div class="flex-1">
+          <div class="flex justify-between text-xs text-gray-600 mb-1">
+            <span>Understanding</span>
+            <span id="understanding-pct" class="tabular-nums">0%</span>
           </div>
           <div class="bg-gray-800 rounded-full h-1.5">
             <div id="understanding-bar"
-              class="bg-blue-500 h-1.5 rounded-full transition-all duration-500"
+              class="bg-blue-500 h-1.5 rounded-full transition-all duration-700"
               style="width:0%"></div>
           </div>
         </div>
-        <div>
-          <div class="flex justify-between items-center mb-1.5">
-            <span class="text-xs text-gray-500 font-medium uppercase tracking-wider">
-              Endorsement
-            </span>
-            <span id="endorsement-pct" class="text-xs text-gray-400 tabular-nums">0%</span>
+        <div class="flex-1">
+          <div class="flex justify-between text-xs text-gray-600 mb-1">
+            <span>Endorsement</span>
+            <span id="endorsement-pct" class="tabular-nums">0%</span>
           </div>
           <div class="bg-gray-800 rounded-full h-1.5">
             <div id="endorsement-bar"
-              class="bg-emerald-500 h-1.5 rounded-full transition-all duration-500"
+              class="bg-emerald-500 h-1.5 rounded-full transition-all duration-700"
               style="width:0%"></div>
           </div>
         </div>
       </div>
-
-      <!-- Show Draft -->
-      <button id="show-draft-btn"
-        class="relative w-full bg-gray-800 hover:bg-gray-700 text-sm text-white
-               rounded-xl py-2.5 mb-5 transition-colors font-medium">
-        Show draft
-        <span id="draft-dot"
-          class="hidden absolute top-2.5 right-3 w-2 h-2 bg-blue-400 rounded-full
-                 animate-pulse"></span>
-      </button>
-
-      <!-- Commitments -->
-      <div class="text-xs text-gray-600 uppercase tracking-wider font-medium mb-2.5">
-        Commitments
-      </div>
-      <div id="commitments-list" class="flex flex-col gap-1.5 flex-1"></div>
-
     </div>
+
+    <!-- Question Area -->
+    <div class="flex-1 flex flex-col items-center justify-center px-5 py-6 overflow-y-auto">
+      <div class="w-full max-w-md">
+
+        <div id="question-area">
+          <p id="question-stem"
+            class="text-2xl font-bold mb-6 leading-snug text-gray-100"></p>
+          <div id="options-container" class="flex flex-col gap-3 mb-6"></div>
+
+          <div class="flex gap-2">
+            <button id="freetext-btn"
+              class="sec-btn">Free-text</button>
+            <button id="pass-btn"
+              class="sec-btn">Pass</button>
+            <button id="skip-btn"
+              class="sec-btn">Skip</button>
+          </div>
+        </div>
+
+        <!-- Free-text -->
+        <div id="freetext-area" class="hidden mt-5">
+          <input id="freetext-input" type="text" placeholder="Say anything…"
+            class="w-full bg-gray-800 border border-gray-700 rounded-2xl px-4 py-3.5
+                   text-base mb-3 focus:outline-none focus:border-blue-500
+                   focus:ring-1 focus:ring-blue-500">
+          <div class="flex gap-2">
+            <button id="freetext-submit"
+              class="flex-1 bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white
+                     rounded-2xl py-3 text-sm font-semibold transition-colors">
+              Send
+            </button>
+            <button id="freetext-cancel"
+              class="px-5 text-gray-400 hover:text-gray-200 py-3 transition-colors
+                     text-sm">
+              Cancel
+            </button>
+          </div>
+        </div>
+
+        <!-- Loading -->
+        <div id="loading"
+          class="hidden mt-6 flex items-center gap-3 text-gray-500 text-sm">
+          <div class="loading-dots flex gap-1.5">
+            <span></span><span></span><span></span>
+          </div>
+          <span>Thinking…</span>
+        </div>
+
+        <!-- Error -->
+        <div id="error-msg"
+          class="hidden mt-4 text-red-300 text-sm bg-red-950/60 border border-red-900/50
+                 rounded-2xl px-4 py-3">
+        </div>
+
+      </div>
+    </div>
+
+    <!-- Bottom Bar -->
+    <div class="flex-shrink-0 bg-gray-950 border-t border-gray-800/60 px-4 py-3
+                flex items-center gap-3 safe-bottom">
+      <button id="commitments-btn"
+        class="flex-1 flex items-center gap-2 text-sm text-gray-400
+               bg-gray-900 hover:bg-gray-800 active:bg-gray-700
+               border border-gray-800 rounded-2xl px-4 py-3 transition-colors min-h-[52px]">
+        <span id="commitments-label" class="text-gray-500 text-sm">0 commitments</span>
+        <span class="ml-auto text-gray-700 text-xs">↑</span>
+      </button>
+      <button id="show-draft-btn"
+        class="relative flex items-center gap-2 bg-blue-600 hover:bg-blue-500
+               active:bg-blue-700 text-white text-sm font-semibold rounded-2xl
+               px-6 py-3 transition-colors min-h-[52px] flex-shrink-0">
+        Draft
+        <span id="draft-dot"
+          class="hidden w-2 h-2 bg-white/80 rounded-full animate-pulse"></span>
+      </button>
+    </div>
+
   </div>
 
   <script type="module" src="app.js"></script>
