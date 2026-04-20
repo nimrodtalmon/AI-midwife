@@ -1,7 +1,7 @@
 import { SYSTEM_PROMPT } from './prompt.js';
 
 const ANTHROPIC_MODEL  = 'claude-haiku-4-5-20251001';
-const OPENROUTER_MODEL = 'anthropic/claude-3.5-haiku-20241022';
+const OPENROUTER_MODEL = 'anthropic/claude-3.5-sonnet'; // reliable on OpenRouter; change to anthropic/claude-3-haiku-20240307 for speed
 const ANTHROPIC_URL    = 'https://api.anthropic.com/v1/messages';
 const OPENROUTER_URL   = 'https://openrouter.ai/api/v1/chat/completions';
 

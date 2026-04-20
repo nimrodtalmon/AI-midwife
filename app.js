@@ -11,36 +11,17 @@ const EMPTY_STATE = () => ({
 
 const COLD_START = { stem: "What's this?", options: ["Doing", "Figuring out", "Not sure"] };
 
+// Soft colors per option slot (light theme)
+const OPT_COLORS = ['#5B5BD6', '#7C3AED', '#0891B2', '#16A34A'];
+
 let state = EMPTY_STATE();
 let currentQuestion = { ...COLD_START };
 let apiKey = localStorage.getItem('anthropic_key') || null;
 let isLoading = false;
-let turnCount = 0;
-
-// ── Option color palette (cycles across 4 neon accents) ───────────────────────
-const ACCENTS = [
-  { color: '#6366f1', glow: 'rgba(99,102,241,0.22)',  alpha: 'rgba(99,102,241,0.15)'  }, // indigo
-  { color: '#8b5cf6', glow: 'rgba(139,92,246,0.22)',  alpha: 'rgba(139,92,246,0.15)'  }, // violet
-  { color: '#06b6d4', glow: 'rgba(6,182,212,0.22)',   alpha: 'rgba(6,182,212,0.15)'   }, // cyan
-  { color: '#10b981', glow: 'rgba(16,185,129,0.22)',  alpha: 'rgba(16,185,129,0.15)'  }, // emerald
-];
-
-// ── Phase system ───────────────────────────────────────────────────────────────
-const PHASES = [
-  { min: 0,  label: 'Start',         color: '#4b5563' },
-  { min: 1,  label: 'Exploring',     color: '#6366f1' },
-  { min: 4,  label: 'Shaping',       color: '#8b5cf6' },
-  { min: 8,  label: 'Crystallizing', color: '#06b6d4' },
-  { min: 13, label: 'Finalizing',    color: '#10b981' },
-];
-function getPhase(n) {
-  return [...PHASES].reverse().find(p => n >= p.min) || PHASES[0];
-}
 
 // ── Persistence ────────────────────────────────────────────────────────────────
 function saveState() {
-  try { localStorage.setItem(STORAGE_KEY, JSON.stringify({ state, currentQuestion, turnCount })); }
-  catch (_) {}
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify({ state, currentQuestion })); } catch (_) {}
 }
 function loadSaved() {
   try {
@@ -48,14 +29,13 @@ function loadSaved() {
     if (s?.state && s?.currentQuestion) {
       state = { ...EMPTY_STATE(), ...s.state };
       currentQuestion = s.currentQuestion;
-      turnCount = s.turnCount || state.history.length;
       return true;
     }
   } catch (_) {}
   return false;
 }
 
-// ── DOM refs ───────────────────────────────────────────────────────────────────
+// ── DOM ────────────────────────────────────────────────────────────────────────
 const $ = id => document.getElementById(id);
 const questionStem     = $('question-stem');
 const optionsCont      = $('options-container');
@@ -63,12 +43,9 @@ const loadingEl        = $('loading');
 const errorEl          = $('error-msg');
 const commitmentsList  = $('commitments-list');
 const commitmentsLabel = $('commitments-label');
-const turnBadge        = $('turn-badge');
-const phaseBadge       = $('phase-badge');
+const commitmentsBtn   = $('commitments-btn');
 const uBar             = $('understanding-bar');
-const uPct             = $('understanding-pct');
 const eBar             = $('endorsement-bar');
-const ePct             = $('endorsement-pct');
 const showDraftBtn     = $('show-draft-btn');
 const draftDot         = $('draft-dot');
 const draftOverlay     = $('draft-overlay');
@@ -86,15 +63,13 @@ function init() {
   renderQuestion(currentQuestion, false);
   renderCommitments();
   updateGauges();
-  updateHUD();
-  if (restored && state.history.length > 0) showToast('Continuing from last session');
+  if (restored && state.history.length > 0) showToast('Continuing from last session ✓');
   setupListeners();
 }
 
 // ── Modals ─────────────────────────────────────────────────────────────────────
 function showApiKeyModal() { apiKeyModal.classList.remove('hidden'); }
 function hideApiKeyModal() { apiKeyModal.classList.add('hidden'); }
-
 function openSheet()  { commitmentsSheet.classList.add('open'); sheetScrim.classList.remove('hidden'); }
 function closeSheet() { commitmentsSheet.classList.remove('open'); sheetScrim.classList.add('hidden'); }
 
@@ -102,72 +77,40 @@ function closeSheet() { commitmentsSheet.classList.remove('open'); sheetScrim.cl
 function showToast(msg) {
   const t = $('toast');
   t.textContent = msg;
-  t.classList.replace('toast-hidden', 'toast-show');
-  setTimeout(() => t.classList.replace('toast-show', 'toast-hidden'), 2400);
+  t.classList.replace('toast-out', 'toast-in');
+  setTimeout(() => t.classList.replace('toast-in', 'toast-out'), 2600);
 }
 
-// ── Floating score text ────────────────────────────────────────────────────────
-function spawnFloat(text, anchorEl) {
-  const el = document.createElement('div');
-  el.className = 'float-score';
-  el.textContent = text;
-  document.body.appendChild(el);
-  const r = anchorEl.getBoundingClientRect();
-  el.style.left = (r.left + r.width / 2) + 'px';
-  el.style.top  = (r.top - 4) + 'px';
-  setTimeout(() => el.remove(), 900);
-}
-
-// ── Ripple ─────────────────────────────────────────────────────────────────────
-function addRipple(btn, e) {
-  const r = btn.getBoundingClientRect();
-  const ripple = document.createElement('span');
-  ripple.className = 'ripple';
-  ripple.style.left = (e.clientX - r.left) + 'px';
-  ripple.style.top  = (e.clientY - r.top) + 'px';
-  btn.appendChild(ripple);
-  setTimeout(() => ripple.remove(), 600);
-}
-
-// ── Render helpers ─────────────────────────────────────────────────────────────
+// ── Render ─────────────────────────────────────────────────────────────────────
 function renderQuestion(q, animate = true) {
-  const doRender = () => {
+  const paint = () => {
     questionStem.textContent = q.stem;
-    questionStem.classList.remove('q-exit');
+    questionStem.classList.remove('out');
     if (animate) {
-      questionStem.classList.add('q-enter');
-      setTimeout(() => questionStem.classList.remove('q-enter'), 280);
+      questionStem.classList.add('in');
+      setTimeout(() => questionStem.classList.remove('in'), 260);
     }
     renderOptions(q.options);
   };
-
   if (animate) {
-    questionStem.classList.add('q-exit');
-    setTimeout(doRender, 140);
+    questionStem.classList.add('out');
+    setTimeout(paint, 140);
   } else {
-    doRender();
+    paint();
   }
 }
 
 function renderOptions(options) {
   optionsCont.innerHTML = '';
   options.forEach((opt, i) => {
-    const accent = ACCENTS[i % ACCENTS.length];
     const btn = document.createElement('button');
     btn.className = 'option-btn';
-    btn.style.cssText = `
-      --accent: ${accent.color};
-      --glow: ${accent.glow};
-      --accent-alpha: ${accent.alpha};
-      animation-delay: ${i * 55}ms;
-    `;
-    btn.innerHTML = `<span class="opt-num">${i + 1}</span><span>${escHtml(opt)}</span>`;
-
-    btn.addEventListener('click', e => {
+    btn.textContent = opt;
+    btn.style.cssText = `--opt-color:${OPT_COLORS[i % OPT_COLORS.length]}; animation-delay:${i * 50}ms`;
+    btn.addEventListener('click', () => {
       if (isLoading) return;
-      addRipple(btn, e);
-      btn.classList.add('option-selected');
-      setTimeout(() => dispatch({ type: 'option', value: opt }), 130);
+      btn.classList.add('picked');
+      setTimeout(() => dispatch({ type: 'option', value: opt }), 110);
     });
     optionsCont.appendChild(btn);
   });
@@ -176,22 +119,19 @@ function renderOptions(options) {
 function renderCommitments() {
   const n = state.commitments.length;
   const prev = parseInt(commitmentsLabel.dataset.count || '0');
-
-  commitmentsLabel.textContent = n === 0 ? 'No commitments'
+  commitmentsLabel.textContent = n === 0 ? '0 commitments'
     : n === 1 ? '1 commitment' : `${n} commitments`;
   commitmentsLabel.dataset.count = n;
-  commitmentsLabel.classList.toggle('has-items', n > 0);
+  commitmentsBtn.classList.toggle('has-items', n > 0);
 
   if (n > prev) {
-    commitmentsLabel.classList.add('count-pop');
-    spawnFloat(`+${n - prev} commitment${n - prev > 1 ? 's' : ''}`, $('commitments-btn'));
-    setTimeout(() => commitmentsLabel.classList.remove('count-pop'), 400);
+    commitmentsLabel.classList.add('pop');
+    setTimeout(() => commitmentsLabel.classList.remove('pop'), 350);
   }
 
   commitmentsList.innerHTML = n === 0
-    ? '<p style="font-size:0.82rem;color:#374151;font-style:italic;padding:4px 0">None yet — keep answering.</p>'
+    ? '<p style="font-size:.83rem;color:#aaa;font-style:italic;padding:8px 0">None yet — keep answering.</p>'
     : '';
-
   state.commitments.forEach(c => {
     const div = document.createElement('div');
     div.className = 'commitment-item';
@@ -204,30 +144,15 @@ function renderCommitments() {
 }
 
 function updateGauges() {
-  const u = Math.round(state.gauges.understanding * 100);
-  const e = Math.round(state.gauges.endorsement * 100);
-  uBar.style.width = u + '%';
-  uPct.textContent = u + '%';
-  eBar.style.width = e + '%';
-  ePct.textContent = e + '%';
-  showDraftBtn.classList.toggle('ready', e >= 55);
-}
-
-function updateHUD() {
-  if (turnCount > 0) {
-    turnBadge.textContent = `Q${turnCount}`;
-    turnBadge.classList.remove('hidden');
-  }
-  const phase = getPhase(state.commitments.length);
-  phaseBadge.textContent = phase.label;
-  phaseBadge.style.color = phase.color;
-  phaseBadge.style.borderColor = phase.color;
+  uBar.style.width = Math.round(state.gauges.understanding * 100) + '%';
+  eBar.style.width = Math.round(state.gauges.endorsement   * 100) + '%';
+  showDraftBtn.classList.toggle('ready', state.gauges.endorsement >= 0.55);
 }
 
 function showDraft() {
   draftContent.innerHTML = state.artifact
     ? renderMd(state.artifact)
-    : '<p style="color:#4b5563;font-style:italic;font-size:0.85rem">Answer a few more questions, then try again.</p>';
+    : '<p style="color:#aaa;font-style:italic;font-size:.85rem">Answer a few more questions, then try again.</p>';
   draftOverlay.classList.remove('hidden');
   draftDot.classList.add('hidden');
   state.artifact_stale = false;
@@ -237,7 +162,7 @@ function showDraft() {
 function setLoading(val) {
   isLoading = val;
   loadingEl.classList.toggle('hidden', !val);
-  document.querySelectorAll('.option-btn, .sec-btn, #show-draft-btn, #commitments-btn')
+  document.querySelectorAll('.option-btn, .pill-btn, #show-draft-btn, #commitments-btn')
     .forEach(el => el.disabled = val);
 }
 
@@ -247,7 +172,7 @@ function showError(msg) {
   setTimeout(() => errorEl.classList.add('hidden'), 7000);
 }
 
-// ── Core dispatcher ────────────────────────────────────────────────────────────
+// ── Dispatch ───────────────────────────────────────────────────────────────────
 async function dispatch(action, requestDraft = false) {
   if (!apiKey) { showApiKeyModal(); return; }
   setLoading(true);
@@ -264,7 +189,6 @@ async function dispatch(action, requestDraft = false) {
     if (typeof result.understanding === 'number') state.gauges.understanding = result.understanding;
     if (typeof result.endorsement   === 'number') state.gauges.endorsement   = result.endorsement;
 
-    turnCount++;
     state.history.push({ question: currentQuestion.stem, options: currentQuestion.options, action, answer: action.value || action.type });
 
     if (result.next_question?.stem && Array.isArray(result.next_question.options)) {
@@ -274,10 +198,8 @@ async function dispatch(action, requestDraft = false) {
 
     if (result.artifact) {
       state.artifact = result.artifact;
-      state.artifact_stale = false;
     } else if (!requestDraft && state.artifact &&
                ((result.commitments_added?.length > 0) || (result.commitments_removed?.length > 0))) {
-      state.artifact_stale = true;
       draftDot.classList.remove('hidden');
     }
 
@@ -285,7 +207,6 @@ async function dispatch(action, requestDraft = false) {
 
     renderCommitments();
     updateGauges();
-    updateHUD();
     saveState();
 
   } catch (err) {
@@ -295,7 +216,7 @@ async function dispatch(action, requestDraft = false) {
   }
 }
 
-// ── Event listeners ────────────────────────────────────────────────────────────
+// ── Listeners ──────────────────────────────────────────────────────────────────
 function setupListeners() {
   $('api-key-submit').addEventListener('click', () => {
     const k = $('api-key-input').value.trim();
@@ -310,10 +231,10 @@ function setupListeners() {
 
   $('reset-btn').addEventListener('click', () => {
     if (!confirm('Start a new session?')) return;
-    state = EMPTY_STATE(); currentQuestion = { ...COLD_START }; turnCount = 0;
+    state = EMPTY_STATE(); currentQuestion = { ...COLD_START };
     localStorage.removeItem(STORAGE_KEY);
     renderQuestion(currentQuestion, false);
-    renderCommitments(); updateGauges(); updateHUD();
+    renderCommitments(); updateGauges();
     draftDot.classList.add('hidden'); errorEl.classList.add('hidden');
     freetextArea.classList.add('hidden'); freetextInput.value = '';
     closeSheet(); showDraftBtn.classList.remove('ready');
@@ -336,7 +257,6 @@ function setupListeners() {
   freetextInput.addEventListener('keydown', e => { if (e.key === 'Enter') $('freetext-submit').click(); });
 
   showDraftBtn.addEventListener('click', () => { if (!isLoading) dispatch({ type: 'draft' }, true); });
-
   $('close-draft').addEventListener('click', () => draftOverlay.classList.add('hidden'));
   draftOverlay.addEventListener('click', e => { if (e.target === draftOverlay) draftOverlay.classList.add('hidden'); });
 
@@ -344,10 +264,10 @@ function setupListeners() {
   sheetScrim.addEventListener('click', closeSheet);
 }
 
-// ── Utilities ──────────────────────────────────────────────────────────────────
+// ── Utils ──────────────────────────────────────────────────────────────────────
 function renderMd(text) {
   if (typeof marked !== 'undefined' && marked.parse) return marked.parse(text);
-  return `<pre style="white-space:pre-wrap;font-size:0.82rem;color:#cbd5e1">${escHtml(text)}</pre>`;
+  return `<pre style="white-space:pre-wrap;font-size:.82rem">${escHtml(text)}</pre>`;
 }
 function escHtml(s) {
   return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');

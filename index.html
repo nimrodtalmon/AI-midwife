@@ -4,135 +4,108 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>AI-Midwife</title>
-  <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdn.jsdelivr.net/npm/marked@9/marked.min.js"></script>
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
 
-  <!-- ── Toast ─────────────────────────────────────────────────────────────── -->
-  <div id="toast" class="toast toast-hidden"></div>
+  <!-- Toast -->
+  <div id="toast" class="toast toast-out"></div>
 
-  <!-- ── API Key Modal ─────────────────────────────────────────────────────── -->
-  <div id="api-key-modal" class="modal-scrim hidden">
-    <div class="modal-card">
-      <div class="modal-glyph">✦</div>
-      <h2 class="modal-title">Paste your API key</h2>
-      <p class="modal-sub">
-        Anthropic <code>sk-ant-…</code> or OpenRouter <code>sk-or-…</code><br>
-        Stored in your browser only.
-      </p>
-      <input id="api-key-input" type="password" placeholder="sk-…"
-        autocomplete="off" autocorrect="off" spellcheck="false"
-        class="modal-input">
-      <button id="api-key-submit" class="btn-primary w-full">Let's go →</button>
+  <!-- API Key Modal -->
+  <div id="api-key-modal" class="scrim hidden">
+    <div class="modal">
+      <p class="modal-emoji">🔑</p>
+      <h2 class="modal-title">Your API key</h2>
+      <p class="modal-sub">Anthropic <span class="mono">sk-ant-…</span> or OpenRouter <span class="mono">sk-or-…</span>. Lives only in your browser.</p>
+      <input id="api-key-input" type="password" placeholder="sk-…" class="text-input" autocomplete="off">
+      <button id="api-key-submit" class="btn-cta full">Start →</button>
     </div>
   </div>
 
-  <!-- ── Draft Overlay ─────────────────────────────────────────────────────── -->
-  <div id="draft-overlay" class="modal-scrim hidden items-end">
-    <div class="draft-sheet">
-      <div class="draft-header">
-        <span class="draft-title">Your draft</span>
-        <button id="close-draft" class="close-btn">×</button>
+  <!-- Draft Overlay -->
+  <div id="draft-overlay" class="scrim hidden bottom-align">
+    <div class="sheet draft-sheet">
+      <div class="sheet-top">
+        <span class="sheet-title">Draft</span>
+        <button id="close-draft" class="icon-btn">✕</button>
       </div>
-      <div id="draft-content" class="prose-dark draft-body"></div>
+      <div id="draft-content" class="draft-body prose"></div>
     </div>
   </div>
 
-  <!-- ── Commitments Sheet ──────────────────────────────────────────────────── -->
-  <div id="sheet-scrim" class="modal-scrim hidden" style="background:rgba(0,0,0,0.55)"></div>
-  <div id="commitments-sheet" class="bottom-sheet">
-    <div class="sheet-handle-wrap"><div class="sheet-handle"></div></div>
-    <div class="sheet-body">
-      <div class="sheet-header">
-        <span class="sheet-title">Commitments</span>
-        <span class="sheet-hint">tap to retract</span>
+  <!-- Commitments Sheet -->
+  <div id="sheet-scrim" class="scrim hidden" style="background:rgba(0,0,0,0.3)"></div>
+  <div id="commitments-sheet" class="sheet bottom-sheet">
+    <div class="handle-row"><div class="handle"></div></div>
+    <div class="sheet-inner">
+      <div class="sheet-top">
+        <span class="sheet-title">Your commitments</span>
+        <span class="sheet-hint">tap to remove</span>
       </div>
-      <div id="commitments-list" class="flex flex-col gap-2"></div>
+      <div id="commitments-list"></div>
     </div>
   </div>
 
-  <!-- ── App Shell ─────────────────────────────────────────────────────────── -->
-  <div class="app-shell">
+  <!-- App -->
+  <div class="app">
 
-    <!-- HUD Header -->
-    <header class="hud-header">
-      <div class="hud-top">
-        <div class="hud-left">
-          <span class="app-logo">✦ Midwife</span>
-          <div id="turn-badge" class="turn-badge hidden">Q1</div>
-          <div id="phase-badge" class="phase-badge"></div>
-        </div>
-        <div class="hud-right">
-          <button id="clear-key-btn" class="ghost-btn">key</button>
-          <button id="reset-btn"     class="ghost-btn danger">new</button>
+    <!-- Header -->
+    <header class="header">
+      <div class="header-row">
+        <span class="logo">midwife ✦</span>
+        <div class="header-actions">
+          <button id="clear-key-btn" class="ghost">key</button>
+          <button id="reset-btn"     class="ghost">new</button>
         </div>
       </div>
-      <div class="gauges-row">
-        <div class="gauge-wrap">
-          <div class="gauge-label">
-            <span>Understanding</span>
-            <span id="understanding-pct" class="gauge-pct">0%</span>
-          </div>
-          <div class="gauge-track">
-            <div id="understanding-bar" class="gauge-fill blue" style="width:0%"></div>
-          </div>
+      <div class="progress-strip">
+        <div class="progress-track">
+          <div id="understanding-bar" class="progress-fill blue" style="width:0%"></div>
         </div>
-        <div class="gauge-wrap">
-          <div class="gauge-label">
-            <span>Endorsement</span>
-            <span id="endorsement-pct" class="gauge-pct">0%</span>
-          </div>
-          <div class="gauge-track">
-            <div id="endorsement-bar" class="gauge-fill emerald" style="width:0%"></div>
-          </div>
+        <div class="progress-track">
+          <div id="endorsement-bar" class="progress-fill green" style="width:0%"></div>
         </div>
       </div>
     </header>
 
-    <!-- Question Area -->
-    <main class="question-area">
-      <div class="question-card">
-        <p id="question-stem" class="question-stem"></p>
-        <div id="options-container" class="options-list"></div>
-        <div class="sec-row">
-          <button id="freetext-btn" class="sec-btn">Free-text</button>
-          <button id="pass-btn"     class="sec-btn">Pass</button>
-          <button id="skip-btn"     class="sec-btn">Skip</button>
+    <!-- Question -->
+    <main class="main">
+      <div class="card">
+        <p id="question-stem" class="question"></p>
+        <div id="options-container" class="options"></div>
+
+        <div class="row gap-2 mt-3">
+          <button id="freetext-btn" class="pill-btn">✏️ Free-text</button>
+          <button id="pass-btn"     class="pill-btn">↺ Pass</button>
+          <button id="skip-btn"     class="pill-btn">→ Skip</button>
         </div>
 
-        <!-- Free-text -->
-        <div id="freetext-area" class="freetext-area hidden">
-          <input id="freetext-input" type="text" placeholder="Say anything…"
-            class="freetext-input">
-          <div class="freetext-actions">
-            <button id="freetext-submit" class="btn-primary flex-1">Send</button>
-            <button id="freetext-cancel" class="ghost-btn">Cancel</button>
+        <div id="freetext-area" class="freetext hidden">
+          <input id="freetext-input" type="text" placeholder="Type anything…" class="text-input">
+          <div class="row gap-2">
+            <button id="freetext-submit" class="btn-cta">Send</button>
+            <button id="freetext-cancel" class="ghost">Cancel</button>
           </div>
         </div>
 
-        <!-- Loading -->
-        <div id="loading" class="loading-row hidden">
-          <div class="spinner"></div>
-          <span class="loading-text">Thinking…</span>
+        <div id="loading" class="loading hidden">
+          <span class="dots"><span></span><span></span><span></span></span>
         </div>
 
-        <!-- Error -->
-        <div id="error-msg" class="error-box hidden"></div>
+        <div id="error-msg" class="error hidden"></div>
       </div>
     </main>
 
-    <!-- Bottom Bar -->
-    <footer class="bottom-bar">
-      <button id="commitments-btn" class="score-btn">
-        <span class="score-icon">◆</span>
-        <span id="commitments-label" class="score-label">No commitments</span>
-        <span class="score-arrow">↑</span>
+    <!-- Footer -->
+    <footer class="footer">
+      <button id="commitments-btn" class="ideas-btn">
+        <span id="commitments-label">0 commitments</span>
+        <span class="up-arrow">↑</span>
       </button>
       <button id="show-draft-btn" class="draft-btn">
         Draft
-        <span id="draft-dot" class="draft-dot hidden"></span>
+        <span id="draft-dot" class="dot hidden"></span>
       </button>
     </footer>
 
