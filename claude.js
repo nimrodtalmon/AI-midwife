@@ -1,30 +1,22 @@
 import { SYSTEM_PROMPT } from './prompt.js';
 
-const MODEL = 'claude-sonnet-4-6';
-const API_URL = 'https://api.anthropic.com/v1/messages';
+const ANTHROPIC_MODEL    = 'claude-sonnet-4-6';
+const OPENROUTER_MODEL   = 'anthropic/claude-sonnet-4-5';
+const ANTHROPIC_URL      = 'https://api.anthropic.com/v1/messages';
+const OPENROUTER_URL     = 'https://openrouter.ai/api/v1/chat/completions';
+
+function isOpenRouter(apiKey) {
+  return apiKey.startsWith('sk-or-');
+}
 
 export async function callClaude(apiKey, state, action, requestDraft = false) {
-  const body = {
-    model: MODEL,
-    max_tokens: 1500,
-    system: SYSTEM_PROMPT,
-    messages: [
-      { role: 'user', content: buildUserMessage(state, action, requestDraft) }
-    ]
-  };
+  const userMsg = buildUserMessage(state, action, requestDraft);
 
   let response;
   try {
-    response = await fetch(API_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01',
-        'anthropic-dangerous-direct-browser-access': 'true'
-      },
-      body: JSON.stringify(body)
-    });
+    response = isOpenRouter(apiKey)
+      ? await callOpenRouter(apiKey, userMsg)
+      : await callAnthropic(apiKey, userMsg);
   } catch (e) {
     throw new Error('Network error — check your connection and try again.');
   }
@@ -39,9 +31,10 @@ export async function callClaude(apiKey, state, action, requestDraft = false) {
   }
 
   const data = await response.json();
-  const text = data.content?.[0]?.text || '';
+  const text = isOpenRouter(apiKey)
+    ? (data.choices?.[0]?.message?.content || '')
+    : (data.content?.[0]?.text || '');
 
-  // Extract JSON — model should return only JSON but may wrap in fences
   const match = text.match(/\{[\s\S]*\}/);
   if (!match) throw new Error('No JSON in model response. Try again.');
 
@@ -50,6 +43,43 @@ export async function callClaude(apiKey, state, action, requestDraft = false) {
   } catch (e) {
     throw new Error('Failed to parse model response. Try again.');
   }
+}
+
+function callAnthropic(apiKey, userMsg) {
+  return fetch(ANTHROPIC_URL, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': apiKey,
+      'anthropic-version': '2023-06-01',
+      'anthropic-dangerous-direct-browser-access': 'true'
+    },
+    body: JSON.stringify({
+      model: ANTHROPIC_MODEL,
+      max_tokens: 1500,
+      system: SYSTEM_PROMPT,
+      messages: [{ role: 'user', content: userMsg }]
+    })
+  });
+}
+
+function callOpenRouter(apiKey, userMsg) {
+  return fetch(OPENROUTER_URL, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey}`,
+      'X-Title': 'AI-Midwife'
+    },
+    body: JSON.stringify({
+      model: OPENROUTER_MODEL,
+      max_tokens: 1500,
+      messages: [
+        { role: 'system', content: SYSTEM_PROMPT },
+        { role: 'user',   content: userMsg }
+      ]
+    })
+  });
 }
 
 function buildUserMessage(state, action, requestDraft) {
